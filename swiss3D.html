@@ -197,6 +197,27 @@ kbd{display:inline-block;padding:0 5px;border-radius:4px;background:rgba(255,255
 .hud-metric .v{font-size:15px;font-weight:700;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
 .hud-metric .k{font-size:9.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.8px}
 #hudProgress{width:200px}
+.hud-metric.hud-edit{cursor:pointer;border-radius:10px;padding:3px 6px;margin:-3px -6px;transition:background .15s}
+.hud-metric.hud-edit:hover{background:rgba(255,255,255,.09)}
+.hud-pop{
+  position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%);
+  display:none;width:240px;padding:11px 14px;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:14px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);
+}
+.hud-pop.on{display:block}
+.hud-pop.below{bottom:auto;top:calc(100% + 10px)}
+.hud-pop label{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-bottom:7px}
+.hud-pop label b{font-variant-numeric:tabular-nums}
+.hud-pop input{width:100%;accent-color:var(--red)}
+
+/* ---------- Verschiebbare Panels ---------- */
+#hud{touch-action:none}
+.drag-grip{cursor:grab;color:var(--ink-3);font-size:15px;line-height:1;user-select:none;flex:none;padding:0 2px}
+.chart-head{cursor:grab;touch-action:none}
+.chart-head .panel-close{cursor:pointer}
+.drag-active{cursor:grabbing !important}
+.drag-active *{cursor:grabbing !important}
 
 /* ---------- Elevation chart ---------- */
 #chartPanel{
@@ -390,18 +411,27 @@ kbd{display:inline-block;padding:0 5px;border-radius:4px;background:rgba(255,255
 
 <!-- Flight HUD -->
 <div id="hud">
+  <div class="drag-grip" title="Verschieben · Doppelklick: Position zurücksetzen">⠿</div>
   <button class="hud-btn play" id="hudPlay" title="Pause / Weiter">⏸</button>
   <button class="hud-btn stop" id="hudStop" title="Flug beenden">⏹</button>
   <div class="hud-metric"><div class="v" id="hudDist">0.0 km</div><div class="k">Distanz</div></div>
-  <div class="hud-metric"><div class="v" id="hudAlt">– m</div><div class="k">Höhe</div></div>
-  <div class="hud-metric"><div class="v" id="hudSpeed">60</div><div class="k">km/h</div></div>
+  <div class="hud-metric hud-edit" id="hudAltWrap" title="Flughöhe über Track einstellen (Klick oder Mausrad)"><div class="v" id="hudAlt">– m</div><div class="k">Höhe ▾</div></div>
+  <div class="hud-metric hud-edit" id="hudSpeedWrap" title="Geschwindigkeit einstellen (Klick oder Mausrad)"><div class="v" id="hudSpeed">60</div><div class="k">km/h ▾</div></div>
   <input type="range" id="hudProgress" min="0" max="1000" value="0" title="Position auf der Route">
-  <div class="hud-metric"><div class="v" id="hudMode">🚁</div><div class="k">Kamera</div></div>
+  <div class="hud-metric hud-edit" id="hudModeWrap" title="Kamera wechseln (Klick)"><div class="v" id="hudMode">🚁</div><div class="k" id="hudModeName">Drohne</div></div>
+  <div class="hud-pop" id="hudAltPop">
+    <label>Flughöhe über Track <b id="hudOffsetVal">150 m</b></label>
+    <input type="range" id="hudOffsetSlider" min="0" max="600" step="10" value="150">
+  </div>
+  <div class="hud-pop" id="hudSpeedPop">
+    <label>Geschwindigkeit <b id="hudSpeedVal">60 km/h</b></label>
+    <input type="range" id="hudSpeedSlider" min="10" max="250" step="5" value="60">
+  </div>
 </div>
 
 <!-- Elevation profile -->
 <div id="chartPanel">
-  <div class="chart-head">
+  <div class="chart-head" title="Verschieben · Doppelklick: Position zurücksetzen">
     <h4>HÖHENPROFIL <small id="chartSource">swissALTI3D · geo.admin.ch</small></h4>
     <button class="panel-close" id="chartCollapse" title="Ein-/ausklappen">▾</button>
   </div>
@@ -923,7 +953,7 @@ function drawTrackEntities(wpts) {
   // Flug-Marker (das "Flugzeug")
   flight.marker = viewer.entities.add({
     show: false,
-    position: new Cesium.CallbackProperty(() => posAtDist(flight.dist, flightOffset()), false),
+    position: new Cesium.CallbackProperty(() => posAtDist(flight.dist, 3), false),
     point: { pixelSize: 13, color: Cesium.Color.fromCssColorString('#E8433F'),
              outlineColor: Cesium.Color.WHITE, outlineWidth: 3,
              disableDepthTestDistance: Number.POSITIVE_INFINITY }
@@ -1058,10 +1088,18 @@ function togglePause() {
   $('hudPlay').textContent = flight.paused ? '▶' : '⏸';
   flight.lastT = performance.now();
 }
+function setFlightOffset(v) {
+  v = Math.min(600, Math.max(0, Math.round(v / 10) * 10));
+  $('offsetSlider').value = v;
+  $('hudOffsetSlider').value = v;
+  $('offsetVal').textContent = v + ' m';
+  $('hudOffsetVal').textContent = v + ' m';
+}
 function setCameraMode(mode) {
   flight.mode = mode;
   document.querySelectorAll('#camSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   $('hudMode').textContent = mode === 'chase' ? '🚁' : (mode === 'cockpit' ? '👁️' : '🛰️');
+  $('hudModeName').textContent = mode === 'chase' ? 'Drohne' : (mode === 'cockpit' ? 'Cockpit' : 'Vogel');
   flight.headingOffset = 0;
   if (mode === 'chase') { flight.pitch = -24 * DEG; flight.range = 480; }
   if (mode === 'cockpit') { flight.pitch = -8 * DEG; }
@@ -1161,9 +1199,16 @@ function setupFlightControls() {
     }
   });
 }
+function setFlightSpeed(v) {
+  flight.speedKmh = clamp(v, 10, 400);
+  syncSpeedUi();
+}
 function syncSpeedUi() {
   $('speedSlider').value = flight.speedKmh;
   $('speedVal').textContent = Math.round(flight.speedKmh) + ' km/h';
+  $('hudSpeedSlider').value = flight.speedKmh;
+  $('hudSpeedVal').textContent = Math.round(flight.speedKmh) + ' km/h';
+  $('hudSpeed').textContent = Math.round(flight.speedKmh);
 }
 
 /* =====================================================================
@@ -1402,15 +1447,44 @@ function setupUi() {
   $('flyBtn').addEventListener('click', startFlight);
   $('hudPlay').addEventListener('click', togglePause);
   $('hudStop').addEventListener('click', () => stopFlight());
-  $('speedSlider').addEventListener('input', () => {
-    flight.speedKmh = parseFloat($('speedSlider').value);
-    $('speedVal').textContent = Math.round(flight.speedKmh) + ' km/h';
-  });
-  $('offsetSlider').addEventListener('input', () => {
-    $('offsetVal').textContent = $('offsetSlider').value + ' m';
-  });
+  $('speedSlider').addEventListener('input', () =>
+    setFlightSpeed(parseFloat($('speedSlider').value)));
+  $('offsetSlider').addEventListener('input', () =>
+    setFlightOffset(parseFloat($('offsetSlider').value)));
   document.querySelectorAll('#camSeg button').forEach(b =>
     b.addEventListener('click', () => setCameraMode(b.dataset.mode)));
+
+  // HUD: Höhe + Tempo direkt editieren (Klick öffnet Mini-Slider, Mausrad verstellt direkt)
+  const hudPops = [['hudAltWrap', 'hudAltPop'], ['hudSpeedWrap', 'hudSpeedPop']];
+  for (const [wrap, pop] of hudPops) {
+    $(wrap).addEventListener('click', () => {
+      for (const [, other] of hudPops) if (other !== pop) $(other).classList.remove('on');
+      $(pop).classList.toggle('on');
+      $(pop).classList.toggle('below', $('hud').getBoundingClientRect().top < 120);
+    });
+  }
+  document.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.hud-pop, .hud-edit'))
+      document.querySelectorAll('.hud-pop.on').forEach(p => p.classList.remove('on'));
+  });
+  $('hudOffsetSlider').addEventListener('input', () =>
+    setFlightOffset(parseFloat($('hudOffsetSlider').value)));
+  $('hudAltWrap').addEventListener('wheel', e => {
+    e.preventDefault();
+    setFlightOffset(flightOffset() + (e.deltaY < 0 ? 10 : -10));
+  }, { passive: false });
+  $('hudSpeedSlider').addEventListener('input', () =>
+    setFlightSpeed(parseFloat($('hudSpeedSlider').value)));
+  $('hudSpeedWrap').addEventListener('wheel', e => {
+    e.preventDefault();
+    setFlightSpeed(flight.speedKmh + (e.deltaY < 0 ? 5 : -5));
+  }, { passive: false });
+
+  // HUD: Kameramodus durchschalten
+  $('hudModeWrap').addEventListener('click', () => {
+    const modes = ['chase', 'cockpit', 'top'];
+    setCameraMode(modes[(modes.indexOf(flight.mode) + 1) % modes.length]);
+  });
   const prog = $('hudProgress');
   prog.addEventListener('pointerdown', () => { hudSeeking = true; });
   prog.addEventListener('input', () => {
@@ -1436,6 +1510,82 @@ function setupUi() {
     $('infoCard').classList.remove('on');
     if (infoPin) infoPin.show = false;
   });
+}
+
+/* =====================================================================
+   Verschiebbare Panels: Flight HUD + Höhenprofil
+   Ziehen am Griff (HUD) bzw. am Titelbalken (Profil) oder an freier
+   Fläche; Position wird in localStorage gemerkt. Doppelklick setzt
+   auf die Standardposition zurück.
+   ===================================================================== */
+function makeDraggable(panel, handle, storeKey) {
+  const MARGIN = 8;
+
+  function place(x, y) {
+    const w = panel.offsetWidth || 200, h = panel.offsetHeight || 60;
+    x = Math.min(Math.max(x, MARGIN), Math.max(MARGIN, innerWidth - w - MARGIN));
+    y = Math.min(Math.max(y, MARGIN), Math.max(MARGIN, innerHeight - h - MARGIN));
+    panel.style.left = x + 'px';
+    panel.style.top = y + 'px';
+    panel.style.bottom = 'auto';
+    panel.style.transform = 'none';
+  }
+
+  function resetPos() {
+    panel.style.left = panel.style.top = panel.style.bottom = panel.style.transform = '';
+    try { localStorage.removeItem(storeKey); } catch (e) {}
+  }
+
+  let dragging = false, moved = false, startX = 0, startY = 0, origX = 0, origY = 0;
+
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, input, a, select, canvas, .hud-edit, .hud-pop')) return;
+    const r = panel.getBoundingClientRect();
+    dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    origX = r.left; origY = r.top;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('drag-active');
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+    moved = true;
+    place(origX + dx, origY + dy);
+  });
+  const endDrag = e => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('drag-active');
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    if (moved) {
+      const r = panel.getBoundingClientRect();
+      try { localStorage.setItem(storeKey, JSON.stringify({ x: r.left, y: r.top })); } catch (err) {}
+    }
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  handle.addEventListener('dblclick', e => {
+    if (e.target.closest('button, input, a, select, canvas, .hud-edit, .hud-pop')) return;
+    resetPos();
+  });
+
+  // Gespeicherte Position wiederherstellen und bei Fenstergrösse-Änderung im Bild halten
+  try {
+    const s = JSON.parse(localStorage.getItem(storeKey));
+    if (s && isFinite(s.x) && isFinite(s.y)) place(s.x, s.y);
+  } catch (e) {}
+  window.addEventListener('resize', () => {
+    if (panel.style.left) place(parseFloat(panel.style.left), parseFloat(panel.style.top));
+  });
+}
+
+function setupDraggablePanels() {
+  makeDraggable($('hud'), $('hud'), 'swiss3d.pos.hud');
+  makeDraggable($('chartPanel'), document.querySelector('#chartPanel .chart-head'), 'swiss3d.pos.chart');
 }
 
 function readGpxFile(file) {
@@ -1476,6 +1626,7 @@ window.addEventListener('load', () => {
   setupSearch();
   setupChart();
   setupFlightControls();
+  setupDraggablePanels();
   viewer.clock.onTick.addEventListener(flightTick);
   setTimeout(() => $('loadingScreen').classList.add('hidden'), 1600);
 });
