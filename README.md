@@ -1,6 +1,8 @@
 
 # GPX-Viewer
 
+![Screenschot](demo.png)
+
 Eine PHP-Webanwendung zur Visualisierung und Verwaltung von GPX-Dateien auf einer interaktiven Karte. Die GPX-Dateien werden in Ordnern gruppiert und können über eine Sidebar einzeln ein- und ausgeblendet werden. Ein Admin-Bereich ermöglicht das Hochladen und Löschen von GPX-Dateien. Meine Webseite dazu gibt es hier: [https://wandern.thomasstaub.ch/gpx-viewer/](https://wandern.thomasstaub.ch/gpx-viewer/)
 
 ## Features
