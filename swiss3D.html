@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swiss Explorer 3D — GPX-Flüge über die Schweiz</title>
+
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.106/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.106/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg-glass: rgba(16,19,26,.82);
+  --bg-glass-soft: rgba(16,19,26,.6);
+  --border-glass: rgba(255,255,255,.1);
+  --ink: rgba(255,255,255,.92);
+  --ink-2: rgba(255,255,255,.62);
+  --ink-3: rgba(255,255,255,.4);
+  --red: #E8433F;
+  --red-soft: rgba(232,67,63,.16);
+  --blue: #2E90EE;
+  --blue-soft: rgba(46,144,238,.14);
+  --radius: 14px;
+  --shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  background:#0b0e14;color:var(--ink);overflow:hidden;
+  font-size:14px;
+}
+button{font-family:inherit}
+#cesiumContainer{position:absolute;inset:0}
+.cesium-viewer-bottom{left:8px !important;bottom:6px !important}
+
+/* ---------- Loading screen ---------- */
+#loadingScreen{
+  position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;
+  background:radial-gradient(1200px 700px at 50% 35%, #1b2436 0%, #0b0e14 70%);
+  transition:opacity .8s ease;
+}
+#loadingScreen.hidden{opacity:0;pointer-events:none}
+.load-logo{font-size:44px;font-weight:800;letter-spacing:-1px;display:flex;align-items:center;gap:14px}
+.load-logo .cross{width:40px;height:40px;border-radius:9px;background:var(--red);position:relative;flex:none;box-shadow:0 0 40px rgba(232,67,63,.55)}
+.load-logo .cross::before,.load-logo .cross::after{content:'';position:absolute;background:#fff;border-radius:2px}
+.load-logo .cross::before{left:50%;top:20%;bottom:20%;width:22%;transform:translateX(-50%)}
+.load-logo .cross::after{top:50%;left:20%;right:20%;height:22%;transform:translateY(-50%)}
+.load-sub{color:var(--ink-2);font-size:15px}
+.load-bar{width:240px;height:3px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
+.load-bar i{display:block;height:100%;width:40%;border-radius:3px;background:var(--red);animation:loadslide 1.2s ease-in-out infinite}
+@keyframes loadslide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+
+/* ---------- Top bar ---------- */
+#topbar{
+  position:absolute;top:14px;left:14px;right:14px;z-index:1200;
+  display:flex;align-items:center;gap:12px;pointer-events:none;
+}
+#topbar>*{pointer-events:auto}
+.brand{
+  display:flex;align-items:center;gap:10px;padding:10px 16px 10px 12px;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:var(--radius);
+  backdrop-filter:blur(14px);box-shadow:var(--shadow);white-space:nowrap;
+}
+.brand .cross{width:22px;height:22px;border-radius:5px;background:var(--red);position:relative;flex:none}
+.brand .cross::before,.brand .cross::after{content:'';position:absolute;background:#fff;border-radius:1px}
+.brand .cross::before{left:50%;top:20%;bottom:20%;width:22%;transform:translateX(-50%)}
+.brand .cross::after{top:50%;left:20%;right:20%;height:22%;transform:translateY(-50%)}
+.brand b{font-weight:700;font-size:15px}
+.brand span{color:var(--ink-3);font-size:12px;font-weight:500}
+
+#searchWrap{position:relative;flex:0 1 420px;min-width:180px}
+#searchInput{
+  width:100%;padding:11px 38px 11px 40px;border-radius:var(--radius);
+  border:1px solid var(--border-glass);background:var(--bg-glass);color:var(--ink);
+  font:inherit;outline:none;backdrop-filter:blur(14px);box-shadow:var(--shadow);
+}
+#searchInput:focus{border-color:rgba(46,144,238,.55)}
+#searchInput::placeholder{color:var(--ink-3)}
+.search-ico{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:15px;pointer-events:none}
+#searchResults{
+  position:absolute;top:calc(100% + 8px);left:0;right:0;display:none;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:var(--radius);
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);overflow:hidden;max-height:320px;overflow-y:auto;
+}
+#searchResults.open{display:block}
+.sr-item{padding:10px 14px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.sr-item:hover{background:rgba(255,255,255,.07)}
+.sr-item b{font-weight:600;font-size:13px}
+.sr-item small{color:var(--ink-3);font-size:11px}
+.sr-item i{font-style:normal}
+
+.tb-spacer{flex:1}
+.tb-btn{
+  height:42px;min-width:42px;padding:0 13px;display:flex;align-items:center;gap:8px;justify-content:center;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:var(--radius);
+  color:var(--ink);cursor:pointer;font-size:16px;backdrop-filter:blur(14px);box-shadow:var(--shadow);
+  transition:background .2s,transform .15s;
+}
+.tb-btn:hover{background:rgba(40,46,60,.9);transform:translateY(-1px)}
+.tb-btn.active{border-color:rgba(232,67,63,.6);background:var(--red-soft)}
+.tb-btn .lbl{font-size:13px;font-weight:600}
+
+/* ---------- Side panels ---------- */
+.panel{
+  position:absolute;z-index:1100;width:320px;max-height:calc(100vh - 96px);
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s;
+}
+#routePanel{top:72px;left:14px}
+#routePanel.hidden{transform:translateX(-120%);opacity:0;pointer-events:none}
+#layerPanel{top:72px;right:14px}
+#layerPanel.hidden{transform:translateX(120%);opacity:0;pointer-events:none}
+.panel-head{padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between;flex:none}
+.panel-head h2{font-size:14px;font-weight:700;letter-spacing:.2px;display:flex;gap:8px;align-items:center}
+.panel-close{background:none;border:none;color:var(--ink-3);font-size:16px;cursor:pointer;padding:4px}
+.panel-close:hover{color:var(--ink)}
+.panel-body{padding:0 16px 16px;overflow-y:auto}
+.panel-body::-webkit-scrollbar{width:8px}
+.panel-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+
+.sect{margin-top:14px}
+.sect:first-child{margin-top:2px}
+.sect h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-3);font-weight:700;margin-bottom:8px}
+
+/* upload */
+#dropZone{
+  border:1.5px dashed rgba(46,144,238,.45);border-radius:12px;padding:18px 12px;text-align:center;
+  cursor:pointer;background:var(--blue-soft);transition:all .2s;
+}
+#dropZone:hover,#dropZone.over{border-color:var(--blue);background:rgba(46,144,238,.22)}
+#dropZone .dz-ico{font-size:22px;margin-bottom:6px}
+#dropZone .dz-t{font-weight:600;font-size:13px}
+#dropZone .dz-s{color:var(--ink-3);font-size:11px;margin-top:3px}
+#gpxFileInput{display:none}
+.mini-row{display:flex;gap:8px;margin-top:8px}
+.mini-btn{
+  flex:1;padding:8px 10px;border-radius:10px;border:1px solid var(--border-glass);
+  background:rgba(255,255,255,.05);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;
+}
+.mini-btn:hover{background:rgba(255,255,255,.1);color:var(--ink)}
+.mini-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* stats */
+#statsGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:9px 11px}
+.stat .v{font-size:16px;font-weight:700;letter-spacing:-.3px}
+.stat .k{font-size:10.5px;color:var(--ink-3);margin-top:1px}
+
+/* flight controls */
+#flyBtn{
+  width:100%;padding:13px;border:none;border-radius:12px;cursor:pointer;
+  background:linear-gradient(135deg,#E8433F,#c22823);color:#fff;font-size:15px;font-weight:700;
+  letter-spacing:.3px;box-shadow:0 6px 24px rgba(232,67,63,.4);transition:all .2s;
+}
+#flyBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 10px 30px rgba(232,67,63,.55)}
+#flyBtn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
+.slider-row{margin-top:12px}
+.slider-row label{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-bottom:5px}
+.slider-row label b{color:var(--ink);font-weight:600}
+input[type=range]{width:100%;appearance:none;-webkit-appearance:none;height:4px;border-radius:2px;background:rgba(255,255,255,.15);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:#fff;cursor:pointer;border:3px solid var(--red);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#fff;cursor:pointer;border:3px solid var(--red)}
+.seg{display:flex;background:rgba(255,255,255,.06);border-radius:10px;padding:3px;gap:3px;margin-top:4px}
+.seg button{flex:1;padding:7px 4px;border:none;border-radius:8px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600;cursor:pointer;transition:all .15s}
+.seg button.on{background:var(--red);color:#fff}
+.seg button:hover:not(.on){background:rgba(255,255,255,.08);color:var(--ink)}
+.hint{margin-top:10px;padding:9px 11px;background:rgba(255,255,255,.04);border-radius:10px;font-size:11px;color:var(--ink-3);line-height:1.55}
+.hint b{color:var(--ink-2);font-weight:600}
+kbd{display:inline-block;padding:0 5px;border-radius:4px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);font-family:inherit;font-size:10px;color:var(--ink-2)}
+
+/* layers panel */
+.lay-row{display:flex;align-items:center;gap:10px;padding:7px 4px;border-radius:8px;cursor:pointer;user-select:none}
+.lay-row:hover{background:rgba(255,255,255,.05)}
+.lay-row input{accent-color:var(--red);width:15px;height:15px;cursor:pointer;flex:none}
+.lay-row .nm{flex:1;font-size:13px}
+.lay-row .tag{font-size:9.5px;color:var(--ink-3);background:rgba(255,255,255,.08);padding:2px 6px;border-radius:5px;letter-spacing:.4px}
+
+/* ---------- Flight HUD ---------- */
+#hud{
+  position:absolute;left:50%;transform:translateX(-50%);z-index:1150;
+  bottom:196px;display:none;align-items:center;gap:14px;padding:10px 16px;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);
+}
+#hud.on{display:flex}
+.hud-btn{width:38px;height:38px;border-radius:50%;border:none;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:#fff;transition:transform .15s}
+.hud-btn:hover{transform:scale(1.08)}
+.hud-btn.play{background:var(--red)}
+.hud-btn.stop{background:rgba(255,255,255,.14)}
+.hud-metric{text-align:center;min-width:64px}
+.hud-metric .v{font-size:15px;font-weight:700;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.hud-metric .k{font-size:9.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.8px}
+#hudProgress{width:200px}
+
+/* ---------- Elevation chart ---------- */
+#chartPanel{
+  position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:1140;
+  width:min(880px, calc(100vw - 28px));
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);
+  display:none;
+}
+#chartPanel.on{display:block}
+#chartPanel.collapsed #chartBody{display:none}
+.chart-head{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 4px}
+.chart-head h4{font-size:12px;font-weight:700;color:var(--ink-2)}
+.chart-head h4 small{color:var(--ink-3);font-weight:500;margin-left:6px}
+#chartBody{position:relative;padding:2px 10px 8px}
+#profileCanvas{display:block;width:100%;height:130px;cursor:crosshair}
+#chartTip{
+  position:absolute;display:none;pointer-events:none;z-index:5;
+  background:#1d222d;border:1px solid rgba(255,255,255,.14);border-radius:8px;
+  padding:6px 9px;font-size:11.5px;box-shadow:0 6px 20px rgba(0,0,0,.5);white-space:nowrap;
+}
+#chartTip b{font-variant-numeric:tabular-nums}
+#chartTip .d{color:var(--ink-3)}
+
+/* ---------- Info card (map click) ---------- */
+#infoCard{
+  position:absolute;right:14px;bottom:14px;z-index:1150;width:270px;display:none;
+  background:var(--bg-glass);border:1px solid var(--border-glass);border-radius:16px;
+  backdrop-filter:blur(16px);box-shadow:var(--shadow);padding:14px 16px;
+}
+#infoCard.on{display:block}
+#infoCard h4{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+#infoCard h4 button{background:none;border:none;color:var(--ink-3);cursor:pointer;font-size:14px}
+.ic-row{display:flex;justify-content:space-between;font-size:12px;padding:3.5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.ic-row:last-of-type{border-bottom:none}
+.ic-row span{color:var(--ink-3)}
+.ic-row b{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+#infoCard a{display:inline-block;margin-top:9px;color:var(--blue);font-size:12px;text-decoration:none;font-weight:600}
+#infoCard a:hover{text-decoration:underline}
+
+/* ---------- Global drop overlay ---------- */
+#dropOverlay{
+  position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;
+  background:rgba(11,14,20,.75);backdrop-filter:blur(6px);
+}
+#dropOverlay.on{display:flex}
+#dropOverlay .box{
+  border:2px dashed var(--blue);border-radius:24px;padding:60px 90px;text-align:center;
+  background:var(--blue-soft);font-size:20px;font-weight:700;
+}
+#dropOverlay .box small{display:block;margin-top:8px;font-size:13px;color:var(--ink-2);font-weight:500}
+
+/* ---------- Toasts ---------- */
+#toasts{position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:9500;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{
+  padding:10px 18px;border-radius:12px;background:var(--bg-glass);border:1px solid var(--border-glass);
+  backdrop-filter:blur(14px);box-shadow:var(--shadow);font-size:13px;font-weight:500;
+  animation:toastin .25s ease;max-width:80vw;text-align:center;
+}
+@keyframes toastin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.toast.out{opacity:0;transition:opacity .4s}
+
+@media (max-width:760px){
+  .brand span{display:none}
+  #topbar{flex-wrap:wrap}
+  .panel{width:calc(100vw - 28px)}
+  #hud{bottom:170px;flex-wrap:wrap;justify-content:center}
+  #hudProgress{width:120px}
+  .tb-btn .lbl{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loadingScreen">
+  <div class="load-logo"><span class="cross"></span>Swiss Explorer 3D</div>
+  <div class="load-sub">Lade swisstopo-Gelände &amp; Luftbilder…</div>
+  <div class="load-bar"><i></i></div>
+</div>
+
+<div id="cesiumContainer"></div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div class="brand"><span class="cross"></span><b>Swiss Explorer 3D</b><span>powered by geo.admin.ch</span></div>
+  <div id="searchWrap">
+    <span class="search-ico">🔍</span>
+    <input id="searchInput" type="text" placeholder="Ort suchen (swisstopo)…" autocomplete="off">
+    <div id="searchResults"></div>
+  </div>
+  <div class="tb-spacer"></div>
+  <button class="tb-btn" id="btnRoute" title="Route &amp; Flug">🛩️ <span class="lbl">Route</span></button>
+  <button class="tb-btn" id="btnLayers" title="Karten &amp; Ebenen">🗺️ <span class="lbl">Ebenen</span></button>
+  <button class="tb-btn" id="btnHome" title="Startansicht">🏠</button>
+  <button class="tb-btn" id="btnShare" title="Ansicht als Link teilen">🔗</button>
+  <button class="tb-btn" id="btnFull" title="Vollbild">⛶</button>
+</div>
+
+<!-- Route / flight panel -->
+<div class="panel" id="routePanel">
+  <div class="panel-head">
+    <h2>🛩️ Route &amp; Flug</h2>
+    <button class="panel-close" data-close="routePanel">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="sect">
+      <div id="dropZone">
+        <div class="dz-ico">📂</div>
+        <div class="dz-t">GPX-Datei hochladen</div>
+        <div class="dz-s">Klicken oder Datei irgendwo ins Fenster ziehen</div>
+      </div>
+      <input type="file" id="gpxFileInput" accept=".gpx,application/gpx+xml">
+      <div class="mini-row">
+        <button class="mini-btn" id="btnDemo">✨ Demo: Matterhorn</button>
+        <button class="mini-btn" id="btnClear" disabled>🗑️ Entfernen</button>
+      </div>
+    </div>
+
+    <div class="sect" id="statsSect" style="display:none">
+      <h3>Track-Statistik</h3>
+      <div id="statsGrid"></div>
+    </div>
+
+    <div class="sect" id="flightSect" style="display:none">
+      <h3>Flug</h3>
+      <button id="flyBtn">🚀 Abflug!</button>
+      <div class="slider-row">
+        <label>Geschwindigkeit <b id="speedVal">60 km/h</b></label>
+        <input type="range" id="speedSlider" min="10" max="250" step="5" value="60">
+      </div>
+      <div class="slider-row">
+        <label>Flughöhe über Track <b id="offsetVal">150 m</b></label>
+        <input type="range" id="offsetSlider" min="0" max="600" step="10" value="150">
+      </div>
+      <div class="slider-row">
+        <label>Kamera</label>
+        <div class="seg" id="camSeg">
+          <button data-mode="chase" class="on">🚁 Drohne</button>
+          <button data-mode="cockpit">👁️ Cockpit</button>
+          <button data-mode="top">🛰️ Vogel</button>
+        </div>
+      </div>
+      <div class="hint">
+        <b>Während des Flugs:</b><br>
+        Maus ziehen = umschauen · Mausrad = Distanz<br>
+        <kbd>Leertaste</kbd> Pause · <kbd>+</kbd>/<kbd>−</kbd> Tempo · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> Kamera<br>
+        <kbd>R</kbd> Blick zurücksetzen · <kbd>Esc</kbd> Flug beenden
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Layers panel -->
+<div class="panel hidden" id="layerPanel">
+  <div class="panel-head">
+    <h2>🗺️ Karten &amp; Ebenen</h2>
+    <button class="panel-close" data-close="layerPanel">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="sect">
+      <h3>Hintergrund</h3>
+      <label class="lay-row"><input type="radio" name="baselayer" value="swissimage" checked><span class="nm">Luftbild swissimage</span><span class="tag">SWISSTOPO</span></label>
+      <label class="lay-row"><input type="radio" name="baselayer" value="karte"><span class="nm">Landeskarte farbig</span><span class="tag">SWISSTOPO</span></label>
+      <label class="lay-row"><input type="radio" name="baselayer" value="grau"><span class="nm">Landeskarte grau</span><span class="tag">SWISSTOPO</span></label>
+      <label class="lay-row"><input type="radio" name="baselayer" value="winter"><span class="nm">Winterkarte</span><span class="tag">SWISSTOPO</span></label>
+    </div>
+    <div class="sect">
+      <h3>Überlagerungen</h3>
+      <label class="lay-row"><input type="checkbox" id="ovWander"><span class="nm">🥾 Wanderwege</span></label>
+      <label class="lay-row"><input type="checkbox" id="ovSki"><span class="nm">🎿 Skitouren</span></label>
+      <label class="lay-row"><input type="checkbox" id="ovVelo"><span class="nm">🚴 Veloland-Routen</span></label>
+      <label class="lay-row"><input type="checkbox" id="ovHang"><span class="nm">⚠️ Hangneigung &gt; 30°</span></label>
+    </div>
+    <div class="sect">
+      <h3>3D-Objekte</h3>
+      <label class="lay-row"><input type="checkbox" id="t3dBuildings" checked><span class="nm">🏠 Gebäude (swissTLM3D)</span></label>
+      <label class="lay-row"><input type="checkbox" id="t3dNames" checked><span class="nm">🏷️ Ortsnamen 3D</span></label>
+      <label class="lay-row"><input type="checkbox" id="t3dVegetation"><span class="nm">🌲 Vegetation <span class="tag">LANGSAM</span></span></label>
+    </div>
+    <div class="sect">
+      <h3>Beleuchtung</h3>
+      <label class="lay-row"><input type="checkbox" id="lightToggle"><span class="nm">☀️ Sonnenstand &amp; Schatten</span></label>
+      <div class="slider-row" style="padding:2px 4px 4px">
+        <label>Tageszeit <b id="timeVal">14:00</b></label>
+        <input type="range" id="timeSlider" min="5" max="22" step="0.25" value="14">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Flight HUD -->
+<div id="hud">
+  <button class="hud-btn play" id="hudPlay" title="Pause / Weiter">⏸</button>
+  <button class="hud-btn stop" id="hudStop" title="Flug beenden">⏹</button>
+  <div class="hud-metric"><div class="v" id="hudDist">0.0 km</div><div class="k">Distanz</div></div>
+  <div class="hud-metric"><div class="v" id="hudAlt">– m</div><div class="k">Höhe</div></div>
+  <div class="hud-metric"><div class="v" id="hudSpeed">60</div><div class="k">km/h</div></div>
+  <input type="range" id="hudProgress" min="0" max="1000" value="0" title="Position auf der Route">
+  <div class="hud-metric"><div class="v" id="hudMode">🚁</div><div class="k">Kamera</div></div>
+</div>
+
+<!-- Elevation profile -->
+<div id="chartPanel">
+  <div class="chart-head">
+    <h4>HÖHENPROFIL <small id="chartSource">swissALTI3D · geo.admin.ch</small></h4>
+    <button class="panel-close" id="chartCollapse" title="Ein-/ausklappen">▾</button>
+  </div>
+  <div id="chartBody">
+    <canvas id="profileCanvas"></canvas>
+    <div id="chartTip"></div>
+  </div>
+</div>
+
+<!-- Click info card -->
+<div id="infoCard">
+  <h4>📍 Standort-Info <button id="infoClose">✕</button></h4>
+  <div class="ic-row"><span>Gemeinde</span><b id="icGemeinde">…</b></div>
+  <div class="ic-row"><span>Koordinaten</span><b id="icWgs">–</b></div>
+  <div class="ic-row"><span>LV95</span><b id="icLv95">–</b></div>
+  <div class="ic-row"><span>Höhe (swissALTI3D)</span><b id="icHeight">…</b></div>
+  <a id="icLink" href="#" target="_blank" rel="noopener">Auf map.geo.admin.ch öffnen ↗</a>
+</div>
+
+<div id="dropOverlay"><div class="box">GPX-Datei hier loslassen<small>Die Route wird direkt auf dem 3D-Gelände angezeigt</small></div></div>
+<div id="toasts"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   Swiss Explorer 3D — GPX-Flüge über das swisstopo-3D-Modell der Schweiz
+   Genutzte geo.admin.ch-Dienste:
+   - Terrain 3D (ch.swisstopo.terrain.3d), 3D-Tiles: Gebäude, Vegetation, Namen
+   - WMTS: swissimage, Landeskarten, Wanderwege, Skitouren, Veloland, Hangneigung
+   - REST: SearchServer (Ortssuche), profile.json (Höhenprofil),
+           height (Punkthöhe), identify (Gemeinde)
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+
+/* ---------- Koordinaten: WGS84 <-> LV95 (swisstopo-Näherungsformeln) ---------- */
+function wgs84ToLv95(lon, lat) {
+  const p = (lat * 3600 - 169028.66) / 10000;
+  const l = (lon * 3600 - 26782.5) / 10000;
+  const E = 2600072.37 + 211455.93 * l - 10938.51 * l * p - 0.36 * l * p * p - 44.54 * l * l * l;
+  const N = 1200147.07 + 308807.95 * p + 3745.25 * l * l + 76.63 * p * p - 194.56 * l * l * p + 119.79 * p * p * p;
+  return { E, N };
+}
+function lv95ToWgs84(E, N) {
+  const y = (E - 2600000) / 1000000;
+  const x = (N - 1200000) / 1000000;
+  const l = 2.6779094 + 4.728982 * y + 0.791484 * y * x + 0.1306 * y * x * x - 0.0436 * y * y * y;
+  const p = 16.9023892 + 3.238272 * x - 0.270978 * y * y - 0.002528 * x * x - 0.0447 * y * y * x - 0.0140 * x * x * x;
+  return { lon: l * 100 / 36, lat: p * 100 / 36 };
+}
+function haversine(lon1, lat1, lon2, lat2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * DEG, dLon = (lon2 - lon1) * DEG;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * DEG) * Math.cos(lat2 * DEG) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function toast(msg, ms = 3200) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, ms);
+}
+
+/* =====================================================================
+   Cesium-Viewer + Geoadmin-Layer
+   ===================================================================== */
+let viewer = null;
+const CH_RECT = Cesium.Rectangle.fromDegrees(5.01, 45.35, 11.48, 48.28);
+const HOME = { lon: 8.23, lat: 46.35, h: 110000, heading: 0, pitch: -48 };
+
+const WMTS = 'https://wmts.geo.admin.ch/1.0.0/';
+function geoadminImagery(layer, fmt, maxLevel) {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: WMTS + layer + '/default/current/4326/{z}/{x}/{y}.' + fmt,
+    minimumLevel: 8, maximumLevel: maxLevel || 17,
+    rectangle: CH_RECT,
+    tilingScheme: new Cesium.GeographicTilingScheme({ numberOfLevelZeroTilesX: 2, numberOfLevelZeroTilesY: 1 }),
+    credit: new Cesium.Credit('© swisstopo', true)
+  });
+}
+const BASE_LAYERS = {
+  swissimage: () => geoadminImagery('ch.swisstopo.swissimage-product', 'jpeg', 17),
+  karte:      () => geoadminImagery('ch.swisstopo.pixelkarte-farbe', 'jpeg', 17),
+  grau:       () => geoadminImagery('ch.swisstopo.pixelkarte-grau', 'jpeg', 17),
+  winter:     () => geoadminImagery('ch.swisstopo.pixelkarte-farbe-winter', 'jpeg', 17)
+};
+const OVERLAYS = {
+  ovWander: 'ch.swisstopo.swisstlm3d-wanderwege',
+  ovSki:    'ch.swisstopo-karto.skitouren',
+  ovVelo:   'ch.astra.veloland',
+  ovHang:   'ch.swisstopo.hangneigung-ueber_30'
+};
+const TILESETS = {
+  t3dBuildings: 'https://vectortiles.geo.admin.ch/3d-tiles/ch.swisstopo.swisstlm3d.3d/20201020/tileset.json',
+  t3dNames:     'https://vectortiles.geo.admin.ch/3d-tiles/ch.swisstopo.swissnames3d.3d/20180716/tileset.json',
+  t3dVegetation:'https://vectortiles.geo.admin.ch/3d-tiles/ch.swisstopo.vegetation.3d/20190313/tileset.json'
+};
+let baseImageryLayer = null;
+const overlayLayers = {};   // checkboxId -> ImageryLayer
+const tilesetObjs = {};     // checkboxId -> Cesium3DTileset
+
+function initViewer() {
+  viewer = new Cesium.Viewer('cesiumContainer', {
+    terrainProvider: new Cesium.CesiumTerrainProvider({
+      url: 'https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/',
+      credit: new Cesium.Credit('© swisstopo', true)
+    }),
+    imageryProvider: BASE_LAYERS.swissimage(),
+    baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+    navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+    selectionIndicator: false, infoBox: false, scene3DOnly: true,
+    requestRenderMode: false
+  });
+  baseImageryLayer = viewer.imageryLayers.get(0);
+
+  const scene = viewer.scene;
+  scene.globe.depthTestAgainstTerrain = true;
+  scene.globe.baseColor = Cesium.Color.fromCssColorString('#151a24');
+  scene.backgroundColor = Cesium.Color.fromCssColorString('#0b0e14');
+  scene.fog.enabled = true;
+  scene.fog.density = 0.00012;
+  scene.skyAtmosphere.show = true;
+  scene.screenSpaceCameraController.minimumZoomDistance = 5;
+
+  // Tageszeit für Sonnenstand
+  setClockHour(14);
+
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.h),
+    orientation: { heading: 0, pitch: HOME.pitch * DEG, roll: 0 }
+  });
+
+  addTileset('t3dBuildings');
+  addTileset('t3dNames');
+
+  restoreCameraFromHash();
+  setupClickInfo();
+}
+
+function addTileset(id) {
+  if (tilesetObjs[id]) { tilesetObjs[id].show = true; return; }
+  try {
+    const ts = new Cesium.Cesium3DTileset({ url: TILESETS[id], maximumScreenSpaceError: 24 });
+    tilesetObjs[id] = ts;
+    viewer.scene.primitives.add(ts);
+    if (ts.readyPromise && ts.readyPromise.catch) {
+      ts.readyPromise.catch(() => { console.warn('Tileset nicht verfügbar: ' + id); });
+    }
+  } catch (e) { console.warn('Tileset-Fehler', id, e); }
+}
+function setTilesetVisible(id, on) {
+  if (on) addTileset(id);
+  else if (tilesetObjs[id]) tilesetObjs[id].show = false;
+}
+function setBaseLayer(key) {
+  const idx = viewer.imageryLayers.indexOf(baseImageryLayer);
+  viewer.imageryLayers.remove(baseImageryLayer, true);
+  baseImageryLayer = viewer.imageryLayers.addImageryProvider(BASE_LAYERS[key](), Math.max(0, idx));
+  viewer.imageryLayers.lowerToBottom(baseImageryLayer);
+}
+function setOverlay(id, on) {
+  if (on && !overlayLayers[id]) {
+    overlayLayers[id] = viewer.imageryLayers.addImageryProvider(
+      geoadminImagery(OVERLAYS[id], 'png', 17));
+    overlayLayers[id].alpha = 0.85;
+  } else if (!on && overlayLayers[id]) {
+    viewer.imageryLayers.remove(overlayLayers[id], true);
+    delete overlayLayers[id];
+  }
+}
+function setClockHour(hour) {
+  const d = new Date();
+  d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+  viewer.clock.currentTime = Cesium.JulianDate.fromDate(d);
+}
+function setSunLighting(on) {
+  viewer.scene.globe.enableLighting = on;
+  viewer.shadows = on;
+  viewer.terrainShadows = on ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED;
+}
+
+/* =====================================================================
+   Geoadmin REST: Suche, Höhe, Gemeinde, Profil
+   ===================================================================== */
+const API = 'https://api3.geo.admin.ch/rest/services/';
+
+let searchTimer = null;
+function setupSearch() {
+  const inp = $('searchInput'), box = $('searchResults');
+  inp.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) { box.classList.remove('open'); return; }
+    searchTimer = setTimeout(() => runSearch(q), 260);
+  });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = box.querySelector('.sr-item');
+      if (first) first.click();
+    } else if (e.key === 'Escape') { box.classList.remove('open'); inp.blur(); }
+  });
+  document.addEventListener('click', e => {
+    if (!$('searchWrap').contains(e.target)) box.classList.remove('open');
+  });
+}
+async function runSearch(q) {
+  const box = $('searchResults');
+  try {
+    const url = API + 'api/SearchServer?sr=4326&lang=de&type=locations&limit=8&searchText=' + encodeURIComponent(q);
+    const res = await fetch(url);
+    const data = await res.json();
+    box.innerHTML = '';
+    const results = (data.results || []).filter(r => r.attrs && isFinite(r.attrs.lat));
+    if (!results.length) { box.innerHTML = '<div class="sr-item"><small>Keine Treffer</small></div>'; box.classList.add('open'); return; }
+    for (const r of results) {
+      const el = document.createElement('div');
+      el.className = 'sr-item';
+      const label = document.createElement('b');
+      label.innerHTML = (r.attrs.label || '').replace(/<(?!\/?(b|i)\b)[^>]*>/g, '');
+      const sub = document.createElement('small');
+      sub.textContent = r.attrs.detail ? r.attrs.detail.split(' ').slice(-2).join(' ') : '';
+      el.appendChild(label); el.appendChild(sub);
+      el.addEventListener('click', () => {
+        box.classList.remove('open');
+        $('searchInput').value = label.textContent;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(r.attrs.lon, r.attrs.lat - 0.025, 3200),
+          orientation: { heading: 0, pitch: -38 * DEG, roll: 0 },
+          duration: 2.6
+        });
+      });
+      box.appendChild(el);
+    }
+    box.classList.add('open');
+  } catch (e) { console.warn('Suche fehlgeschlagen', e); }
+}
+
+/* ---------- Klick auf die Karte: Standort-Info ---------- */
+let infoPin = null;
+function setupClickInfo() {
+  const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+  handler.setInputAction(click => {
+    if (flight.active) return;
+    let cart = null;
+    if (viewer.scene.pickPositionSupported) {
+      const p = viewer.scene.pickPosition(click.position);
+      if (Cesium.defined(p)) cart = Cesium.Cartographic.fromCartesian(p);
+    }
+    if (!cart) {
+      const ray = viewer.camera.getPickRay(click.position);
+      const p = viewer.scene.globe.pick(ray, viewer.scene);
+      if (Cesium.defined(p)) cart = Cesium.Cartographic.fromCartesian(p);
+    }
+    if (!cart) return;
+    showLocationInfo(cart.longitude / DEG, cart.latitude / DEG, cart.height);
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+}
+async function showLocationInfo(lon, lat, terrainH) {
+  const { E, N } = wgs84ToLv95(lon, lat);
+  $('icWgs').textContent = lat.toFixed(5) + '°N, ' + lon.toFixed(5) + '°E';
+  $('icLv95').textContent = Math.round(E).toLocaleString('de-CH') + ' / ' + Math.round(N).toLocaleString('de-CH');
+  $('icHeight').textContent = '…';
+  $('icGemeinde').textContent = '…';
+  $('icLink').href = 'https://map.geo.admin.ch/#/map?center=' + Math.round(E) + ',' + Math.round(N) + '&z=9';
+  $('infoCard').classList.add('on');
+
+  if (!infoPin) {
+    infoPin = viewer.entities.add({
+      point: { pixelSize: 11, color: Cesium.Color.fromCssColorString('#E8433F'),
+               outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+               disableDepthTestDistance: Number.POSITIVE_INFINITY }
+    });
+  }
+  infoPin.position = Cesium.Cartesian3.fromDegrees(lon, lat, terrainH + 1);
+  infoPin.show = true;
+
+  // Geoadmin-Höhendienst (swissALTI3D)
+  try {
+    const r = await fetch(API + 'height?easting=' + E.toFixed(1) + '&northing=' + N.toFixed(1) + '&sr=2056');
+    const j = await r.json();
+    $('icHeight').textContent = j.height ? Math.round(parseFloat(j.height)).toLocaleString('de-CH') + ' m ü. M.' : Math.round(terrainH) + ' m';
+  } catch (e) { $('icHeight').textContent = Math.round(terrainH) + ' m'; }
+
+  // Gemeinde via Identify
+  try {
+    const ext = (E - 1000) + ',' + (N - 1000) + ',' + (E + 1000) + ',' + (N + 1000);
+    const url = API + 'api/MapServer/identify?geometryType=esriGeometryPoint&geometry=' + E.toFixed(1) + ',' + N.toFixed(1) +
+      '&sr=2056&layers=all:ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill&mapExtent=' + ext +
+      '&imageDisplay=100,100,96&tolerance=0&returnGeometry=false&lang=de';
+    const r = await fetch(url);
+    const j = await r.json();
+    // Layer enthält auch historische Gemeindestände -> aktuellsten wählen
+    const results = (j.results || []).filter(x => x.attributes);
+    let best = results.find(x => x.attributes.is_current_jahr);
+    if (!best && results.length) best = results.reduce((a, b) => ((a.attributes.jahr || 0) >= (b.attributes.jahr || 0) ? a : b));
+    const a = best && best.attributes;
+    $('icGemeinde').textContent = a ? (a.gemname || a.name || '–') + (a.kanton ? ' (' + a.kanton + ')' : '') : '–';
+  } catch (e) { $('icGemeinde').textContent = '–'; }
+}
+
+/* ---------- Höhenprofil via geoadmin profile.json ---------- */
+async function fetchGeoadminProfile(lons, lats) {
+  // auf max. 400 Stützpunkte reduzieren
+  const step = Math.max(1, Math.ceil(lons.length / 400));
+  const coords = [];
+  for (let i = 0; i < lons.length; i += step) {
+    const { E, N } = wgs84ToLv95(lons[i], lats[i]);
+    coords.push([Math.round(E * 10) / 10, Math.round(N * 10) / 10]);
+  }
+  if (coords.length < 2) throw new Error('zu wenig Punkte');
+  const geom = JSON.stringify({ type: 'LineString', coordinates: coords });
+  const body = 'geom=' + encodeURIComponent(geom) + '&sr=2056&nb_points=300&offset=1';
+  const res = await fetch(API + 'profile.json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  if (!res.ok) throw new Error('Profil-API ' + res.status);
+  const arr = await res.json();
+  const pts = arr.map(p => {
+    const w = lv95ToWgs84(p.easting, p.northing);
+    return { dist: p.dist, ele: p.alts ? (p.alts.COMB ?? p.alts.DTM2 ?? p.alts.DTM25) : null, lon: w.lon, lat: w.lat };
+  }).filter(p => p.ele != null && p.ele > -100);
+  if (pts.length < 5) throw new Error('Profil leer (Track ausserhalb der Schweiz?)');
+  return pts;
+}
+
+/* =====================================================================
+   GPX laden & Track aufbereiten
+   ===================================================================== */
+let track = null;   // aufbereiteter Track
+let trackEntities = [];
+let profileData = null;   // [{dist, ele, lon, lat}]
+
+function parseGPX(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Ungültiges XML');
+  let nodes = doc.querySelectorAll('trkpt');
+  if (!nodes.length) nodes = doc.querySelectorAll('rtept');
+  if (!nodes.length) nodes = doc.querySelectorAll('wpt');
+  const pts = [];
+  nodes.forEach(n => {
+    const lat = parseFloat(n.getAttribute('lat')), lon = parseFloat(n.getAttribute('lon'));
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    const eleN = n.querySelector('ele');
+    const timeN = n.querySelector('time');
+    pts.push({
+      lon, lat,
+      ele: eleN ? parseFloat(eleN.textContent) : null,
+      time: timeN ? Date.parse(timeN.textContent) : null
+    });
+  });
+  if (pts.length < 2) throw new Error('Keine Trackpunkte gefunden');
+  const nameN = doc.querySelector('trk > name, rte > name, metadata > name');
+  // benannte Wegpunkte separat
+  const wpts = [];
+  doc.querySelectorAll('wpt').forEach(n => {
+    const nm = n.querySelector('name');
+    const lat = parseFloat(n.getAttribute('lat')), lon = parseFloat(n.getAttribute('lon'));
+    if (nm && isFinite(lat) && isFinite(lon)) wpts.push({ lon, lat, name: nm.textContent.trim() });
+  });
+  return { pts, name: nameN ? nameN.textContent.trim() : 'GPX-Route', wpts: wpts.slice(0, 60) };
+}
+
+async function loadTrack(rawPts, name, wpts) {
+  clearTrack(false);
+  toast('⛰️ Bereite Route vor: ' + name);
+
+  // 1. Duplikate entfernen + kumulierte Distanz
+  const pts = [];
+  for (const p of rawPts) {
+    const l = pts[pts.length - 1];
+    if (!l || Math.abs(l.lon - p.lon) > 1e-7 || Math.abs(l.lat - p.lat) > 1e-7) pts.push(p);
+  }
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1].lon, pts[i - 1].lat, pts[i].lon, pts[i].lat));
+  const total = cum[cum.length - 1];
+  if (total < 20) { toast('❌ Route ist zu kurz'); return; }
+
+  // 2. Gleichmässig neu abtasten (max ~700 Punkte)
+  const interval = Math.max(20, total / 700);
+  const S = { name, total, dist: [], lon: [], lat: [], eleGpx: [], baseAlt: [], heading: [], c3: [] };
+  let j = 0;
+  for (let d = 0; ; d += interval) {
+    if (d > total) d = total;
+    while (j < pts.length - 2 && cum[j + 1] < d) j++;
+    const seg = Math.max(1e-9, cum[j + 1] - cum[j]);
+    const t = clamp((d - cum[j]) / seg, 0, 1);
+    S.dist.push(d);
+    S.lon.push(lerp(pts[j].lon, pts[j + 1].lon, t));
+    S.lat.push(lerp(pts[j].lat, pts[j + 1].lat, t));
+    const e0 = pts[j].ele, e1 = pts[j + 1].ele;
+    S.eleGpx.push((e0 != null && e1 != null && isFinite(e0) && isFinite(e1)) ? lerp(e0, e1, t) : (isFinite(e0) ? e0 : null));
+    if (d >= total) break;
+  }
+  const n = S.dist.length;
+
+  // 3. Geländehöhen vom swisstopo-Terrain abfragen
+  let ground = new Array(n).fill(null);
+  try {
+    const cartos = S.lon.map((lo, i) => Cesium.Cartographic.fromDegrees(lo, S.lat[i]));
+    await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, cartos);
+    ground = cartos.map(c => isFinite(c.height) ? c.height : null);
+  } catch (e) { console.warn('Terrain-Sampling fehlgeschlagen', e); }
+
+  // 4. Flug-Basishöhe: GPX-Höhe, aber nie unter Boden
+  for (let i = 0; i < n; i++) {
+    const g = ground[i], e = S.eleGpx[i];
+    let a = (e != null) ? e : (g != null ? g : 1500);
+    if (g != null) a = Math.max(a, g + 2);
+    S.baseAlt.push(a);
+  }
+  smoothArray(S.baseAlt, 5);
+
+  // 5. Kurs (heading) pro Punkt, entpackt + geglättet
+  for (let i = 0; i < n; i++) {
+    const a = Math.min(i, n - 2);
+    const dLon = (S.lon[a + 1] - S.lon[a]) * Math.cos(S.lat[a] * DEG);
+    const dLat = S.lat[a + 1] - S.lat[a];
+    S.heading.push(Math.atan2(dLon, dLat));
+  }
+  for (let i = 1; i < n; i++) {           // unwrap
+    while (S.heading[i] - S.heading[i - 1] > Math.PI) S.heading[i] -= 2 * Math.PI;
+    while (S.heading[i] - S.heading[i - 1] < -Math.PI) S.heading[i] += 2 * Math.PI;
+  }
+  smoothArray(S.heading, 9);
+
+  // 6. Cartesian-Cache für Linien
+  for (let i = 0; i < n; i++) S.c3.push(Cesium.Cartesian3.fromDegrees(S.lon[i], S.lat[i], S.baseAlt[i] + 3));
+
+  track = S;
+  drawTrackEntities(wpts || []);
+  showStats(pts, S, ground);
+  $('flightSect').style.display = '';
+  $('statsSect').style.display = '';
+  $('btnClear').disabled = false;
+
+  // 7. Höhenprofil: bevorzugt geoadmin-Profil-API, sonst lokale Daten
+  profileData = null;
+  drawChart();
+  $('chartPanel').classList.add('on');
+  try {
+    profileData = await fetchGeoadminProfile(S.lon, S.lat);
+    $('chartSource').textContent = 'swissALTI3D · geo.admin.ch';
+  } catch (e) {
+    console.warn('Profil-API nicht verfügbar, nutze lokale Höhen', e);
+    profileData = S.dist.map((d, i) => ({ dist: d, ele: S.baseAlt[i], lon: S.lon[i], lat: S.lat[i] }));
+    $('chartSource').textContent = 'GPX / Terrain';
+  }
+  drawChart();
+
+  // Kamera zur Route
+  flyToTrackOverview();
+  toast('✅ «' + name + '» geladen — ' + (total / 1000).toFixed(1) + ' km. Bereit zum Abflug! 🚀');
+}
+
+function smoothArray(arr, win) {
+  const half = Math.floor(win / 2), src = arr.slice();
+  for (let i = 0; i < arr.length; i++) {
+    let s = 0, c = 0;
+    for (let k = i - half; k <= i + half; k++) {
+      if (k >= 0 && k < src.length && src[k] != null) { s += src[k]; c++; }
+    }
+    if (c) arr[i] = s / c;
+  }
+}
+
+function drawTrackEntities(wpts) {
+  const S = track;
+  // Gesamte Route (blau, leuchtend)
+  trackEntities.push(viewer.entities.add({
+    polyline: {
+      positions: S.c3, width: 7,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        glowPower: 0.22, color: Cesium.Color.fromCssColorString('#2E90EE')
+      })
+    }
+  }));
+  // Zurückgelegter Teil (rot) — Positionen via Callback
+  trackEntities.push(viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => {
+        if (!track || flight.dist <= 0) return [];
+        const i = distIndex(flight.dist);
+        return track.c3.slice(0, i + 1).concat([posAtDist(flight.dist, 3)]);
+      }, false),
+      width: 7,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        glowPower: 0.25, color: Cesium.Color.fromCssColorString('#E8433F')
+      })
+    }
+  }));
+  // Start / Ziel
+  const mk = (i, txt, col) => viewer.entities.add({
+    position: S.c3[i],
+    point: { pixelSize: 10, color: Cesium.Color.fromCssColorString(col), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    label: { text: txt, font: '600 12px Inter, sans-serif', pixelOffset: new Cesium.Cartesian2(0, -18),
+             fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+             style: Cesium.LabelStyle.FILL_AND_OUTLINE, disableDepthTestDistance: Number.POSITIVE_INFINITY }
+  });
+  trackEntities.push(mk(0, 'START', '#3fb950'));
+  trackEntities.push(mk(S.c3.length - 1, 'ZIEL', '#E8433F'));
+  // GPX-Wegpunkte
+  for (const w of wpts) {
+    trackEntities.push(viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(w.lon, w.lat, 0),
+      point: { pixelSize: 7, color: Cesium.Color.fromCssColorString('#f2b134'), outlineColor: Cesium.Color.BLACK, outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+      label: { text: w.name, font: '11px Inter, sans-serif', pixelOffset: new Cesium.Cartesian2(0, -14),
+               fillColor: Cesium.Color.fromCssColorString('#ffe1a1'), outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
+               style: Cesium.LabelStyle.FILL_AND_OUTLINE, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 30000) }
+    }));
+  }
+  // Flug-Marker (das "Flugzeug")
+  flight.marker = viewer.entities.add({
+    show: false,
+    position: new Cesium.CallbackProperty(() => posAtDist(flight.dist, flightOffset()), false),
+    point: { pixelSize: 13, color: Cesium.Color.fromCssColorString('#E8433F'),
+             outlineColor: Cesium.Color.WHITE, outlineWidth: 3,
+             disableDepthTestDistance: Number.POSITIVE_INFINITY }
+  });
+  trackEntities.push(flight.marker);
+  // Hover-Marker fürs Höhenprofil
+  chartHoverPin = viewer.entities.add({
+    show: false,
+    point: { pixelSize: 10, color: Cesium.Color.fromCssColorString('#2E90EE'),
+             outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+             disableDepthTestDistance: Number.POSITIVE_INFINITY }
+  });
+  trackEntities.push(chartHoverPin);
+}
+
+function showStats(rawPts, S, ground) {
+  let asc = 0, desc = 0;
+  const ele = (S.eleGpx.every(e => e == null)) ? S.baseAlt : S.eleGpx.map((e, i) => e != null ? e : S.baseAlt[i]);
+  const sm = ele.slice(); smoothArray(sm, 7);
+  for (let i = 1; i < sm.length; i++) {
+    const d = sm[i] - sm[i - 1];
+    if (d > 0) asc += d; else desc -= d;
+  }
+  const mx = Math.max(...sm), mn = Math.min(...sm);
+  let dur = null;
+  const times = rawPts.map(p => p.time).filter(t => t != null && isFinite(t));
+  if (times.length > 1) dur = (Math.max(...times) - Math.min(...times)) / 1000;
+  const cells = [
+    [(S.total / 1000).toFixed(1) + ' km', 'Distanz'],
+    [dur != null ? Math.floor(dur / 3600) + 'h ' + String(Math.round(dur % 3600 / 60)).padStart(2, '0') + 'm' : rawPts.length + ' Pkt.', dur != null ? 'Dauer' : 'Trackpunkte'],
+    ['↑ ' + Math.round(asc).toLocaleString('de-CH') + ' m', 'Aufstieg'],
+    ['↓ ' + Math.round(desc).toLocaleString('de-CH') + ' m', 'Abstieg'],
+    [Math.round(mx).toLocaleString('de-CH') + ' m', 'Höchster Punkt'],
+    [Math.round(mn).toLocaleString('de-CH') + ' m', 'Tiefster Punkt']
+  ];
+  $('statsGrid').innerHTML = cells.map(c => '<div class="stat"><div class="v">' + c[0] + '</div><div class="k">' + c[1] + '</div></div>').join('');
+}
+
+function flyToTrackOverview() {
+  if (!track) return;
+  const S = track;
+  const midI = Math.floor(S.c3.length / 2);
+  const span = Math.max(3000, S.total * 0.7);
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(S.lon[midI], S.lat[midI] - span / 220000, S.baseAlt[midI] + span * 0.8),
+    orientation: { heading: 0, pitch: -42 * DEG, roll: 0 },
+    duration: 3
+  });
+}
+
+function clearTrack(alsoUi = true) {
+  stopFlight(true);
+  for (const e of trackEntities) viewer.entities.remove(e);
+  trackEntities = [];
+  flight.marker = null; chartHoverPin = null;
+  track = null; profileData = null;
+  $('chartPanel').classList.remove('on');
+  $('flightSect').style.display = 'none';
+  $('statsSect').style.display = 'none';
+  $('btnClear').disabled = true;
+  if (alsoUi) toast('Route entfernt');
+}
+
+/* ---------- Interpolation entlang des Tracks ---------- */
+function distIndex(d) {
+  const S = track;
+  let lo = 0, hi = S.dist.length - 1;
+  while (lo < hi - 1) { const m = (lo + hi) >> 1; if (S.dist[m] <= d) lo = m; else hi = m; }
+  return lo;
+}
+function sampleAtDist(d) {
+  const S = track;
+  d = clamp(d, 0, S.total);
+  const i = distIndex(d);
+  const t = clamp((d - S.dist[i]) / Math.max(1e-9, S.dist[i + 1] - S.dist[i]), 0, 1);
+  return {
+    lon: lerp(S.lon[i], S.lon[i + 1], t),
+    lat: lerp(S.lat[i], S.lat[i + 1], t),
+    alt: lerp(S.baseAlt[i], S.baseAlt[i + 1], t),
+    heading: lerp(S.heading[i], S.heading[i + 1], t)
+  };
+}
+function posAtDist(d, extraAlt) {
+  if (!track) return Cesium.Cartesian3.fromDegrees(HOME.lon, HOME.lat, 5000);
+  const s = sampleAtDist(d);
+  return Cesium.Cartesian3.fromDegrees(s.lon, s.lat, s.alt + (extraAlt || 0));
+}
+
+/* =====================================================================
+   Flug-Engine
+   ===================================================================== */
+const flight = {
+  active: false, paused: false, dist: 0,
+  speedKmh: 60, mode: 'chase',
+  headingOffset: 0, pitch: -24 * DEG, range: 480,
+  marker: null, lastT: 0
+};
+let chartHoverPin = null;
+const flightOffset = () => parseFloat($('offsetSlider').value);
+
+function startFlight() {
+  if (!track || flight.active) return;
+  flight.active = true;
+  flight.paused = false;
+  flight.dist = 0;
+  flight.headingOffset = 0;
+  flight.pitch = flight.mode === 'top' ? -88 * DEG : (flight.mode === 'cockpit' ? -8 * DEG : -24 * DEG);
+  flight.lastT = performance.now();
+  flight.marker.show = true;
+  viewer.scene.screenSpaceCameraController.enableInputs = false;
+  $('hud').classList.add('on');
+  $('hudPlay').textContent = '⏸';
+  $('flyBtn').disabled = true;
+  $('infoCard').classList.remove('on');
+  closePanel('routePanel');
+  toast('🛫 Abflug! Mit der Maus kannst du dich frei umschauen.');
+}
+function stopFlight(silent) {
+  if (!flight.active) { return; }
+  flight.active = false;
+  if (flight.marker) flight.marker.show = false;
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.scene.screenSpaceCameraController.enableInputs = true;
+  $('hud').classList.remove('on');
+  $('flyBtn').disabled = false;
+  if (!silent) toast('🛬 Flug beendet');
+  drawChart();
+}
+function togglePause() {
+  if (!flight.active) return;
+  flight.paused = !flight.paused;
+  $('hudPlay').textContent = flight.paused ? '▶' : '⏸';
+  flight.lastT = performance.now();
+}
+function setCameraMode(mode) {
+  flight.mode = mode;
+  document.querySelectorAll('#camSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  $('hudMode').textContent = mode === 'chase' ? '🚁' : (mode === 'cockpit' ? '👁️' : '🛰️');
+  flight.headingOffset = 0;
+  if (mode === 'chase') { flight.pitch = -24 * DEG; flight.range = 480; }
+  if (mode === 'cockpit') { flight.pitch = -8 * DEG; }
+  if (mode === 'top') { flight.pitch = -88 * DEG; flight.range = 1400; }
+}
+
+let lastChartDraw = 0;
+function flightTick() {
+  if (!flight.active || !track) return;
+  const now = performance.now();
+  const dt = Math.min(0.25, (now - flight.lastT) / 1000);
+  flight.lastT = now;
+
+  if (!flight.paused) {
+    flight.dist += flight.speedKmh / 3.6 * dt;
+    if (flight.dist >= track.total) {
+      flight.dist = track.total;
+      stopFlight(true);
+      toast('🏁 Ziel erreicht!');
+      return;
+    }
+  }
+
+  const s = sampleAtDist(flight.dist);
+  const alt = s.alt + flightOffset();
+  const target = Cesium.Cartesian3.fromDegrees(s.lon, s.lat, alt);
+
+  if (flight.mode === 'cockpit') {
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    viewer.camera.setView({
+      destination: target,
+      orientation: { heading: s.heading + flight.headingOffset, pitch: flight.pitch, roll: 0 }
+    });
+  } else {
+    const hpr = new Cesium.HeadingPitchRange(
+      s.heading + flight.headingOffset,
+      flight.pitch,
+      flight.mode === 'top' ? flight.range * 1.4 : flight.range
+    );
+    viewer.camera.lookAt(target, hpr);
+  }
+
+  // HUD
+  $('hudDist').textContent = (flight.dist / 1000).toFixed(1) + ' km';
+  $('hudAlt').textContent = Math.round(alt).toLocaleString('de-CH') + ' m';
+  $('hudSpeed').textContent = Math.round(flight.speedKmh);
+  if (!hudSeeking) $('hudProgress').value = Math.round(flight.dist / track.total * 1000);
+
+  if (now - lastChartDraw > 120) { lastChartDraw = now; drawChart(); }
+}
+
+/* ---------- Maus/Tastatur-Steuerung während des Flugs ---------- */
+let dragActive = false, hudSeeking = false;
+function setupFlightControls() {
+  const canvas = viewer.scene.canvas;
+  canvas.addEventListener('pointerdown', e => {
+    if (!flight.active) return;
+    dragActive = true;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!flight.active || !dragActive) return;
+    flight.headingOffset += e.movementX * 0.0045;
+    if (flight.mode !== 'top') {
+      flight.pitch = clamp(flight.pitch - e.movementY * 0.0035,
+        flight.mode === 'cockpit' ? -80 * DEG : -85 * DEG,
+        flight.mode === 'cockpit' ? 45 * DEG : 20 * DEG);
+    }
+  });
+  canvas.addEventListener('pointerup', () => { dragActive = false; });
+  canvas.addEventListener('wheel', e => {
+    if (!flight.active || flight.mode === 'cockpit') return;
+    e.preventDefault();
+    flight.range = clamp(flight.range * (1 + e.deltaY * 0.0012), 60, 12000);
+  }, { passive: false });
+
+  document.addEventListener('keydown', e => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' && document.activeElement.type === 'text') return;
+    if (!flight.active) {
+      if (e.key === 'Escape') { closePanel('layerPanel'); $('infoCard').classList.remove('on'); }
+      return;
+    }
+    switch (e.key) {
+      case ' ': e.preventDefault(); togglePause(); break;
+      case 'Escape': stopFlight(); break;
+      case '+': case '=': flight.speedKmh = clamp(flight.speedKmh + 10, 10, 400); syncSpeedUi(); break;
+      case '-': flight.speedKmh = clamp(flight.speedKmh - 10, 10, 400); syncSpeedUi(); break;
+      case 'ArrowLeft': e.preventDefault(); flight.headingOffset -= 0.06; break;
+      case 'ArrowRight': e.preventDefault(); flight.headingOffset += 0.06; break;
+      case 'ArrowUp': e.preventDefault(); flight.pitch = clamp(flight.pitch + 0.04, -85 * DEG, 45 * DEG); break;
+      case 'ArrowDown': e.preventDefault(); flight.pitch = clamp(flight.pitch - 0.04, -85 * DEG, 45 * DEG); break;
+      case 'r': case 'R': setCameraMode(flight.mode); break;
+      case '1': setCameraMode('chase'); break;
+      case '2': setCameraMode('cockpit'); break;
+      case '3': setCameraMode('top'); break;
+    }
+  });
+}
+function syncSpeedUi() {
+  $('speedSlider').value = flight.speedKmh;
+  $('speedVal').textContent = Math.round(flight.speedKmh) + ' km/h';
+}
+
+/* =====================================================================
+   Höhenprofil-Chart (Canvas)
+   ===================================================================== */
+const chart = { pad: { l: 46, r: 14, t: 10, b: 20 }, hover: null };
+
+function chartData() { return profileData; }
+
+function drawChart() {
+  const cv = $('profileCanvas');
+  if (!cv || !$('chartPanel').classList.contains('on')) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const data = chartData();
+  if (!data || data.length < 2) return;
+
+  const { l, r, t, b } = chart.pad;
+  const pw = w - l - r, ph = h - t - b;
+  const dMax = data[data.length - 1].dist;
+  let eMin = Infinity, eMax = -Infinity;
+  for (const p of data) { if (p.ele < eMin) eMin = p.ele; if (p.ele > eMax) eMax = p.ele; }
+  const eSpan = Math.max(50, eMax - eMin);
+  eMin -= eSpan * 0.08; eMax += eSpan * 0.12;
+
+  const X = d => l + d / dMax * pw;
+  const Y = e => t + (1 - (e - eMin) / (eMax - eMin)) * ph;
+
+  // Gitter + Y-Beschriftung (dezent)
+  ctx.font = '10px Inter, sans-serif';
+  ctx.textBaseline = 'middle';
+  const yStep = niceStep((eMax - eMin) / 3);
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1;
+  for (let e = Math.ceil(eMin / yStep) * yStep; e < eMax; e += yStep) {
+    const y = Y(e);
+    ctx.beginPath(); ctx.moveTo(l, y); ctx.lineTo(w - r, y); ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(e).toLocaleString('de-CH'), l - 6, y);
+  }
+  // X-Beschriftung
+  const xStep = niceStep(dMax / 1000 / 6) * 1000;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let d = 0; d <= dMax + 1; d += xStep) {
+    if (d > dMax) d = dMax;
+    ctx.fillText((d / 1000).toFixed(xStep < 1000 ? 1 : 0) + (d === 0 ? ' km' : ''), X(d), h - b + 6);
+    if (d >= dMax) break;
+  }
+
+  // Fläche + Linie
+  const grad = ctx.createLinearGradient(0, t, 0, t + ph);
+  grad.addColorStop(0, 'rgba(46,144,238,0.34)');
+  grad.addColorStop(1, 'rgba(46,144,238,0.02)');
+  ctx.beginPath();
+  ctx.moveTo(X(data[0].dist), Y(data[0].ele));
+  for (const p of data) ctx.lineTo(X(p.dist), Y(p.ele));
+  ctx.lineTo(X(dMax), t + ph); ctx.lineTo(X(data[0].dist), t + ph); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(X(data[0].dist), Y(data[0].ele));
+  for (const p of data) ctx.lineTo(X(p.dist), Y(p.ele));
+  ctx.strokeStyle = '#2E90EE'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+
+  // Flug-Fortschritt
+  if (track && (flight.active || flight.dist > 0)) {
+    const fx = X(clamp(flight.dist, 0, dMax));
+    ctx.strokeStyle = '#E8433F'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(fx, t); ctx.lineTo(fx, t + ph); ctx.stroke();
+    const fe = eleAtDist(data, clamp(flight.dist, 0, dMax));
+    ctx.beginPath(); ctx.arc(fx, Y(fe), 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#E8433F'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // Hover-Fadenkreuz
+  if (chart.hover != null) {
+    const hx = X(chart.hover);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(hx, t); ctx.lineTo(hx, t + ph); ctx.stroke();
+    const he = eleAtDist(data, chart.hover);
+    ctx.beginPath(); ctx.arc(hx, Y(he), 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+  }
+}
+function niceStep(raw) {
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(1e-9, raw))));
+  const r = raw / mag;
+  return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * mag;
+}
+function eleAtDist(data, d) {
+  let lo = 0, hi = data.length - 1;
+  while (lo < hi - 1) { const m = (lo + hi) >> 1; if (data[m].dist <= d) lo = m; else hi = m; }
+  const t = clamp((d - data[lo].dist) / Math.max(1e-9, data[lo + 1].dist - data[lo].dist), 0, 1);
+  return lerp(data[lo].ele, data[lo + 1].ele, t);
+}
+function pointAtDist(data, d) {
+  let lo = 0, hi = data.length - 1;
+  while (lo < hi - 1) { const m = (lo + hi) >> 1; if (data[m].dist <= d) lo = m; else hi = m; }
+  const t = clamp((d - data[lo].dist) / Math.max(1e-9, data[lo + 1].dist - data[lo].dist), 0, 1);
+  return { lon: lerp(data[lo].lon, data[lo + 1].lon, t), lat: lerp(data[lo].lat, data[lo + 1].lat, t), ele: lerp(data[lo].ele, data[lo + 1].ele, t) };
+}
+
+function setupChart() {
+  const cv = $('profileCanvas'), tip = $('chartTip');
+  const distFromEvent = e => {
+    const rect = cv.getBoundingClientRect();
+    const data = chartData();
+    if (!data) return null;
+    const dMax = data[data.length - 1].dist;
+    const x = e.clientX - rect.left;
+    const { l, r } = chart.pad;
+    return clamp((x - l) / (rect.width - l - r), 0, 1) * dMax;
+  };
+  cv.addEventListener('pointermove', e => {
+    const d = distFromEvent(e);
+    if (d == null) return;
+    chart.hover = d;
+    const data = chartData();
+    const p = pointAtDist(data, d);
+    tip.style.display = 'block';
+    const rect = cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    tip.innerHTML = '<b>' + Math.round(p.ele).toLocaleString('de-CH') + ' m ü. M.</b><br><span class="d">bei km ' + (d / 1000).toFixed(2) + '</span>';
+    tip.style.left = Math.min(rect.width - 120, Math.max(4, x + 12)) + 'px';
+    tip.style.top = '6px';
+    if (chartHoverPin) {
+      chartHoverPin.show = true;
+      chartHoverPin.position = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.ele + 6);
+    }
+    drawChart();
+  });
+  cv.addEventListener('pointerleave', () => {
+    chart.hover = null;
+    tip.style.display = 'none';
+    if (chartHoverPin) chartHoverPin.show = false;
+    drawChart();
+  });
+  cv.addEventListener('click', e => {
+    const d = distFromEvent(e);
+    if (d == null || !track) return;
+    if (flight.active) {
+      flight.dist = clamp(d, 0, track.total);
+    } else {
+      const p = pointAtDist(chartData(), d);
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(p.lon, p.lat - 0.012, p.ele + 1200),
+        orientation: { heading: 0, pitch: -40 * DEG, roll: 0 }, duration: 1.6
+      });
+    }
+  });
+  $('chartCollapse').addEventListener('click', () => {
+    $('chartPanel').classList.toggle('collapsed');
+    $('chartCollapse').textContent = $('chartPanel').classList.contains('collapsed') ? '▴' : '▾';
+    setTimeout(drawChart, 50);
+  });
+  window.addEventListener('resize', () => setTimeout(drawChart, 100));
+}
+
+/* =====================================================================
+   Demo-Route: Rundflug ums Matterhorn
+   ===================================================================== */
+function demoRoute() {
+  const pts = [];
+  // Anflug von Zermatt Richtung Matterhorn
+  const approach = [[7.7447, 46.0165], [7.7300, 46.0080], [7.7120, 45.9985], [7.6960, 45.9900]];
+  for (const [lo, la] of approach) pts.push({ lon: lo, lat: la, ele: null, time: null });
+  // Umrundung
+  const cx = 7.6586, cy = 45.9764, rx = 0.030, ry = 0.021;
+  for (let a = 55; a <= 415; a += 6) {
+    const rad = a * DEG;
+    pts.push({ lon: cx + Math.cos(rad) * rx, lat: cy + Math.sin(rad) * ry, ele: null, time: null });
+  }
+  loadTrack(pts, 'Matterhorn-Rundflug', [{ lon: 7.6586, lat: 45.9764, name: 'Matterhorn 4478 m' }, { lon: 7.7491, lat: 46.0207, name: 'Zermatt' }]);
+}
+
+/* =====================================================================
+   UI-Verdrahtung
+   ===================================================================== */
+function openPanel(id) { $(id).classList.remove('hidden'); }
+function closePanel(id) { $(id).classList.add('hidden'); }
+function togglePanel(id) { $(id).classList.toggle('hidden'); }
+
+function setupUi() {
+  $('btnRoute').addEventListener('click', () => togglePanel('routePanel'));
+  $('btnLayers').addEventListener('click', () => togglePanel('layerPanel'));
+  $('btnHome').addEventListener('click', () => {
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.h),
+      orientation: { heading: 0, pitch: HOME.pitch * DEG, roll: 0 }, duration: 2.5
+    });
+  });
+  $('btnFull').addEventListener('click', () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  });
+  $('btnShare').addEventListener('click', () => {
+    const c = viewer.camera.positionCartographic;
+    const url = location.origin + location.pathname + '#cam=' +
+      (c.longitude / DEG).toFixed(5) + ',' + (c.latitude / DEG).toFixed(5) + ',' + Math.round(c.height) + ',' +
+      (viewer.camera.heading / DEG).toFixed(1) + ',' + (viewer.camera.pitch / DEG).toFixed(1);
+    navigator.clipboard.writeText(url).then(
+      () => toast('🔗 Link zur aktuellen Ansicht kopiert'),
+      () => toast('Link: ' + url, 6000));
+  });
+  document.querySelectorAll('.panel-close[data-close]').forEach(b =>
+    b.addEventListener('click', () => closePanel(b.dataset.close)));
+
+  // GPX-Upload
+  $('dropZone').addEventListener('click', () => $('gpxFileInput').click());
+  $('gpxFileInput').addEventListener('change', e => {
+    if (e.target.files.length) readGpxFile(e.target.files[0]);
+    e.target.value = '';
+  });
+  let dragDepth = 0;
+  window.addEventListener('dragenter', e => { e.preventDefault(); if (++dragDepth === 1) $('dropOverlay').classList.add('on'); });
+  window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; $('dropOverlay').classList.remove('on'); } });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => {
+    e.preventDefault(); dragDepth = 0; $('dropOverlay').classList.remove('on');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) {
+      if (/\.gpx$/i.test(f.name)) readGpxFile(f);
+      else toast('❌ Bitte eine .gpx-Datei verwenden');
+    }
+  });
+  $('btnDemo').addEventListener('click', demoRoute);
+  $('btnClear').addEventListener('click', () => clearTrack());
+
+  // Flug
+  $('flyBtn').addEventListener('click', startFlight);
+  $('hudPlay').addEventListener('click', togglePause);
+  $('hudStop').addEventListener('click', () => stopFlight());
+  $('speedSlider').addEventListener('input', () => {
+    flight.speedKmh = parseFloat($('speedSlider').value);
+    $('speedVal').textContent = Math.round(flight.speedKmh) + ' km/h';
+  });
+  $('offsetSlider').addEventListener('input', () => {
+    $('offsetVal').textContent = $('offsetSlider').value + ' m';
+  });
+  document.querySelectorAll('#camSeg button').forEach(b =>
+    b.addEventListener('click', () => setCameraMode(b.dataset.mode)));
+  const prog = $('hudProgress');
+  prog.addEventListener('pointerdown', () => { hudSeeking = true; });
+  prog.addEventListener('input', () => {
+    if (track) flight.dist = prog.value / 1000 * track.total;
+  });
+  prog.addEventListener('change', () => { hudSeeking = false; });
+
+  // Layer
+  document.querySelectorAll('input[name=baselayer]').forEach(r =>
+    r.addEventListener('change', () => { if (r.checked) setBaseLayer(r.value); }));
+  for (const id of Object.keys(OVERLAYS))
+    $(id).addEventListener('change', e => setOverlay(id, e.target.checked));
+  for (const id of Object.keys(TILESETS))
+    $(id).addEventListener('change', e => setTilesetVisible(id, e.target.checked));
+  $('lightToggle').addEventListener('change', e => setSunLighting(e.target.checked));
+  $('timeSlider').addEventListener('input', () => {
+    const v = parseFloat($('timeSlider').value);
+    $('timeVal').textContent = String(Math.floor(v)).padStart(2, '0') + ':' + String(Math.round(v % 1 * 60)).padStart(2, '0');
+    setClockHour(v);
+  });
+
+  $('infoClose').addEventListener('click', () => {
+    $('infoCard').classList.remove('on');
+    if (infoPin) infoPin.show = false;
+  });
+}
+
+function readGpxFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const { pts, name, wpts } = parseGPX(e.target.result);
+      loadTrack(pts, name || file.name.replace(/\.gpx$/i, ''), wpts);
+    } catch (err) {
+      console.error(err);
+      toast('❌ GPX konnte nicht gelesen werden: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function restoreCameraFromHash() {
+  const m = location.hash.match(/#cam=([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)/);
+  if (!m) return;
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])),
+    orientation: { heading: parseFloat(m[4]) * DEG, pitch: parseFloat(m[5]) * DEG, roll: 0 }
+  });
+}
+
+/* =====================================================================
+   Start
+   ===================================================================== */
+window.addEventListener('load', () => {
+  try {
+    initViewer();
+  } catch (e) {
+    console.error(e);
+    document.querySelector('#loadingScreen .load-sub').textContent = '❌ Fehler beim Laden von Cesium: ' + e.message;
+    return;
+  }
+  setupUi();
+  setupSearch();
+  setupChart();
+  setupFlightControls();
+  viewer.clock.onTick.addEventListener(flightTick);
+  setTimeout(() => $('loadingScreen').classList.add('hidden'), 1600);
+});
+</script>
+</body>
+</html>
